@@ -1,0 +1,19 @@
+# 1. Ignore everything
+*
+
+# 2. Allow directories so Git can see into them
+!*/
+
+# 3. Allow all .py files
+!*.py
+
+# 4. Specifically allow the root configuration files
+!.gitignore
+!pyproject.toml
+
+# 5. EXCEPTION: Ignore the .gitignore inside the .idea folder
+.idea/.gitignore
+
+# 6. Prevent tracking of Python cache folders
+__pycache__/
+*.py[cod]
