@@ -252,6 +252,6 @@ print(f"👉 Wynik PO nauce:    {confidence:.2%}")
 # 9. ZAPISYWANIE MODELU NA DYSKU
 # ==============================================================================
 # Zapisujemy wagi modelu i słownik tokenizera do folderu.
-trainer.save_model("./trainer_api_cpu2_hugging_face_trainer_api/moj_model_synonimy")
-tokenizer.save_pretrained("./trainer_api_cpu2_hugging_face_trainer_api/moj_model_synonimy")
-print("\nModel zapisany w './trainer_api_cpu2_hugging_face_trainer_api/moj_model_synonimy'!")
+trainer.save_model("./fine_tuning_a_model_with_the_trainer_api/moj_model_synonimy")
+tokenizer.save_pretrained("./fine_tuning_a_model_with_the_trainer_api/moj_model_synonimy")
+print("\nModel zapisany w './fine_tuning_a_model_with_the_trainer_api/moj_model_synonimy'!")
