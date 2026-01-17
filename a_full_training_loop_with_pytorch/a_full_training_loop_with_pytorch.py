@@ -45,6 +45,12 @@ tokenized_datasets = raw_datasets.map(tokenize_function, batched=True)
 print("👉 Czyszczenie kolumn i ustawianie formatu tensora...")
 tokenized_datasets = tokenized_datasets.remove_columns(["sentence1", "sentence2", "idx"])
 tokenized_datasets = tokenized_datasets.rename_column("label", "labels")
+
+# --- KLUCZOWY MOMENT KONWERSJI ---
+# Domyślnie 'datasets' zwraca listy Pythona. Model BERT (PyTorch) wymaga jednak
+# obiektów typu torch.Tensor do obliczeń macierzowych. Poniższa linia
+# automatycznie "opakowuje" dane w tensory, co pozwala na ich bezpośrednie
+# przesyłanie do modelu i na kartę graficzną/procesor.
 tokenized_datasets.set_format("torch")
 
 # Wybieramy małe próbki do testu na CPU (dla szybkości treningu na laptopie)
@@ -86,30 +92,49 @@ eval_dataloader = DataLoader(
 # 3. MODEL I TEST PRZED NAUKĄ (ANALIZA MATEMATYCZNA)
 # ==============================================================================
 print("\n[3/7] KROK 3: Ładowanie modelu i analiza przed treningiem...")
+# --- ŁADOWANIE ARCHITEKTURY I WAG ---
+# AutoModelForSequenceClassification: Pobiera architekturę BERT-a i automatycznie
+# dodaje na jej szczycie "głowicę klasyfikacyjną" (warstwę Linear).
+# - checkpoint: Wczytuje wyuczone już wagi języka (wiedza o gramatyce i znaczeniu słów).
+# - num_labels=2: Mówi modelowi, że na końcu ma mieć 2 wyjścia (w tym przypadku:
+#   0 - to nie parafraza, 1 - to parafraza).
 model = AutoModelForSequenceClassification.from_pretrained(checkpoint, num_labels=2)
-# AdamW: Optymalizator z poprawką na zanikanie wag (weight decay).
+
+# --- SILNIK UCZENIA (OPTYMALIZATOR) ---
+# AdamW: Wyrafinowana wersja algorytmu spadku gradientu. To on decyduje,
+# jak mocno zmienić "pokrętła" (parametry) modelu, aby zmniejszyć błąd (loss).
+# - model.parameters(): Dajemy optymalizatorowi dostęp do wszystkich wag modelu,
+#   które ma prawo modyfikować.
+# - lr=5e-5: (Learning Rate) "Prędkość nauki". Bardzo mała wartość (0.00005),
+#   aby model nie "zapomniał" tego, co już wie, a jedynie delikatnie dostosował się
+#   do nowego zadania (fine-tuning).
+# - 'W' w AdamW (Weight Decay): Technika zapobiegająca przeuczeniu – model
+#   stara się trzymać wagi na niskim poziomie, co promuje prostsze rozwiązania.
 optimizer = AdamW(model.parameters(), lr=5e-5)
 
 z1, z2 = "Pawel is here", "Pawel is present"
 # Zamieniamy nasze zdania testowe na format modelu i wysyłamy na CPU/GPU.
 inputs = tokenizer(z1, z2, return_tensors="pt").to(device)
 
-# --- WYJAŚNIENIE BLOKU LOGITÓW I SOFTMAXU ---
-# with torch.no_grad(): - Wyłączamy "tryb nagrywania" gradientów.
-# Przy samej predykcji (zgadywaniu) model nie musi pamiętać ścieżki obliczeń.
-# To drastycznie przyspiesza działanie i zużywa mniej pamięci.
-with torch.no_grad():
+# --- WYJAŚNIENIE TRYBU INFERENCJI I INTERPRETACJI WYNIKÓW ---
+# with torch.inference_mode(): - Nowsza, bezpieczniejsza i szybsza wersja no_grad().
+# Całkowicie izoluje model od mechanizmu gradientów. W świecie LLM "inferencja"
+# to moment, w którym model nie uczy się, a jedynie wykorzystuje zdobytą wiedzę.
+with torch.inference_mode():
     # model(**inputs) - Przekazujemy dane przez sieć neuronową.
     # .logits - Model zwraca surowe wyniki (punkty) dla każdej klasy (0 i 1).
-    # Te liczby mogą być dowolne, np. [-2.1, 1.5]. Trudno je zrozumieć człowiekowi.
-    # LOGITY to surowy output ostatniej warstwy liniowej przed jakąkolwiek normalizacją.
+    # KONTEKST LLM: Sieci neuronowe na ostatniej warstwie nie "myślą" kategoriami
+    # prawdy czy fałszu, ale "napięciem" na neuronach wyjściowych.
+    # LOGITY to właśnie te surowe wartości – im wyższy logit, tym bardziej model
+    # "wierzy" w daną klasę, ale te liczby są nienormalizowane (np. mogą wynosić 5.4 i -1.2).
     logits_pre = model(**inputs).logits
 
     # F.softmax(logits_pre, dim=-1) - Magiczna funkcja matematyczna.
-    # Bierze surowe logity (np. -2.1 i 1.5) i zamienia je na prawdopodobieństwo (0% - 100%).
-    # Po Softmaxie suma wyników dla obu klas zawsze wynosi dokładnie 1 (czyli 100%).
+    # KONTEKST LLM: Ponieważ trudno operować na logitach, używamy Softmaxu, aby:
+    # 1. Sprowadzić wszystkie wyniki do przedziału (0, 1) – czyli prawdopodobieństwa.
+    # 2. Sprawić, by suma wszystkich wyników wynosiła 1.0 (100%).
+    # To kluczowy moment: dzięki temu wiemy, czy model jest "pewny na 99%", czy "waha się 51/49".
     # dim=-1 oznacza, że liczymy to dla ostatniego wymiaru (czyli dla naszych klas).
-    # SOFTMAX pozwala nam zinterpretować wynik jako "pewność modelu".
     probs_pre = F.softmax(logits_pre, dim=-1)
 
 print(f"👉 Zdanie A: {z1} | Zdanie B: {z2}")
@@ -119,9 +144,18 @@ print(f"👉 Pewność przed nauką (Softmax): {probs_pre[0][1].item():.2%}")
 # 4. KONFIGURACJA ACCELERATE I HARMONOGRAMU (SCHEDULER)
 # ==============================================================================
 print("\n[4/7] KROK 4: Konfiguracja Accelerate i Schedulera...")
+# ===========================================================================
 
-# prepare(): To tutaj Accelerate przejmuje kontrolę nad obiektami.
-# Dataloadery zostaną zoptymalizowane pod kątem Twojego procesora.
+# --- WYJAŚNIENIE FUNKCJI PREPARE() ---
+# accelerator.prepare(): To najważniejszy moment w pracy z biblioteką Accelerate.
+# Ta linia "owija" (wrapuje) Twoje obiekty w inteligentne opakowania, które:
+# 1. MODEL I OPTYMALIZATOR: Przenosi je na odpowiednie urządzenie (CPU, GPU lub wiele GPU).
+# 2. DATALOADERY: Zmienia je w wersje, które potrafią dostarczać dane do modelu
+#    w sposób zsynchronizowany ze sprzętem.
+# 3. AUTOMATYZACJA: Dzięki temu ten sam kod uruchomisz na swoim laptopie z procesorem
+#    Intel Ultra 7, jak i na potężnym klastrze obliczeniowym, bez zmiany ani jednej linii kodu.
+# WYJAŚNIENIE: Zamiast ręcznie pisać .to(device) dla każdego elementu,
+# powierzasz to zadanie Acceleratorowi, który dba o maksymalną wydajność.
 train_dataloader, eval_dataloader, model, optimizer = accelerator.prepare(
     train_dataloader, eval_dataloader, model, optimizer
 )
@@ -146,82 +180,124 @@ lr_scheduler = get_scheduler(
     num_training_steps=num_training_steps,
 )
 # ==============================================================================
-# 5. PĘTLA TRENINGOWA
+# 5. PĘTLA TRENINGOWA (PROCES NAUKI)
 # ==============================================================================
 
 print(f"\n[5/7] KROK 5: Rozpoczynam pętlę treningową (Manual Training Loop)...")
 progress_bar = tqdm(range(num_training_steps))
 
-model.train()  # Aktywujemy tryb treningowy (ważne dla warstw takich jak Dropout i BatchNorm)
+# model.train(): Przełącza model w tryb uczenia. Niektóre warstwy (jak Dropout)
+# zachowują się inaczej podczas treningu niż podczas testów. To sygnał dla modelu:
+# "Będziemy aktualizować Twoją wiedzę, bądź w gotowości".
+model.train()
+
 for epoch in range(num_epochs):
     print(f"\n--- Epoka {epoch + 1} / {num_epochs} ---")
     for step, batch in enumerate(train_dataloader):
-        # Forward pass: Model przewiduje wyniki dla aktualnej paczki (batch).
+        # --- KROK 1: FORWARD PASS (PRZEJŚCIE DO PRZODU) ---
+        # Przepuszczamy dane przez wszystkie warstwy sieci. Model generuje
+        # przewidywania (logits) i automatycznie porównuje je z poprawnymi
+        # odpowiedziami (labels) zawartymi w 'batch'.
         outputs = model(**batch)
 
-        # Loss: Obliczamy matematyczną karę za błędy modelu.
+        # --- KROK 2: LOSS CALCULATION (OBLICZANIE STRATY) ---
+        # 'loss' to pojedyncza liczba mówiąca o tym, jak bardzo model się pomylił.
+        # Im większy błąd, tym wyższa strata. Naszym celem jest zminimalizowanie tej liczby.
         loss = outputs.loss
 
-        # Backward pass: Obliczamy gradienty (pochodne błędu).
-        # accelerator.backward() zastępuje standardowe loss.backward() w PyTorch.
+        # --- KROK 3: BACKWARD PASS (PROPAGACJA WSTECZNA) ---
+        # accelerator.backward(loss): Obliczamy tzw. gradienty dla każdego parametru.
+        # Gradient to informacja: "O ile i w którą stronę muszę przesunąć to konkretne
+        # pokrętło w modelu, żeby strata (loss) była mniejsza?".
+        # Dzięki 'accelerate' proces ten jest zoptymalizowany pod Twój sprzęt.
         accelerator.backward(loss)
 
-        # Aktualizacja wag: Poprawiamy "pokrętła" modelu na podstawie obliczonych gradientów.
+        # --- KROK 4: OPTIMIZER STEP (AKTUALIZACJA WAG) ---
+        # Teraz, gdy wiemy już, w którą stronę kręcić pokrętłami (mamy gradienty),
+        # optymalizator AdamW faktycznie wykonuje ten ruch, zmieniając wagi modelu.
         optimizer.step()
 
-        # Aktualizacja tempa nauki: Scheduler obniża learning rate zgodnie z planem liniowym.
+        # --- KROK 5: SCHEDULER STEP (KOREKTA PRĘDKOŚCI) ---
+        # Zgodnie z planem liniowym, po każdej aktualizacji wag nieco zmniejszamy
+        # współczynnik uczenia (Learning Rate). Model z czasem staje się coraz
+        # bardziej "ostrożny" w swoich zmianach.
         lr_scheduler.step()
 
-        # Wyzerowanie gradientów: Czyścimy pamięć błędu przed kolejną paczką.
-        # W PyTorch gradienty się sumują (akumulują), więc musimy je ręcznie czyścić!
+        # --- KROK 6: ZERO GRAD (CZYSZCZENIE PAMIĘCI) ---
+        # KLUCZOWE: PyTorch domyślnie dodaje nowe gradienty do starych.
+        # Jeśli ich nie wyzerujemy, model "pogubi się", sumując poprawki z poprzednich
+        # paczek danych. Czyścimy tablicę przed kolejnym krokiem.
         optimizer.zero_grad()
 
         progress_bar.update(1)
 
 # ==============================================================================
-# 6. EWALUACJA (SPRAWDZIAN KOŃCOWY)
+# 6. EWALUACJA (EGZAMIN GENERALNY MODELU)
 # ==============================================================================
 print("\n[6/7] KROK 6: Rozpoczynam sprawdzian modelu (Ewaluacja)...")
+
+# evaluate.load: Pobieramy gotowy "arkusz ocen" dla zadania MRPC.
+# Metryki (takie jak Accuracy czy F1-score) pozwalają nam obiektywnie ocenić,
+# czy model faktycznie rozumie język, czy tylko zgaduje.
 metric = evaluate.load("glue", "mrpc")
-model.eval()  # Wyłączamy funkcje treningowe. Model ma teraz tylko stabilnie odpowiadać.
+
+# model.eval(): Przełączamy model w tryb "Egzaminu".
+# Jest to absolutnie kluczowe! Wyłącza mechanizmy takie jak Dropout, które
+# podczas treningu celowo wprowadzają szum, by model był odporniejszy.
+# W trybie eval() model staje się stabilny i deterministyczny.
+model.eval()
 
 for batch in eval_dataloader:
-    # Podczas ewaluacji nigdy nie liczymy gradientów (oszczędność czasu i energii CPU).
-    with torch.no_grad():
+    # --- TRYB BEZ GRADIENTÓW (ZAMIAST no_grad MOŻNA UŻYĆ inference_mode) ---
+    # Podczas sprawdzianu nie chcemy zmieniać wag modelu ani tracić pamięci
+    # na zapamiętywanie ścieżki obliczeń do Backpropagation.
+    # To sprawia, że proces jest dużo szybszy i zużywa ułamek pamięci RAM.
+    with torch.inference_mode():
         outputs = model(**batch)
 
+    # Logits: Pobieramy "pewność siebie" modelu dla każdej z dwóch klas.
     logits = outputs.logits
-    # argmax: Wybieramy indeks (0 lub 1), który dostał najwięcej punktów (najwyższy logit).
+
+    # --- KROK 1: ARGMAX (DECYZJA MODELU) ---
+    # Model wyrzuca logity (np. [-1.2, 3.5]). Funkcja argmax patrzy, która liczba
+    # jest większa i zwraca jej indeks (w tym przypadku '1').
+    # To jest moment, w którym model finalnie mówi nam: "Uważam, że to parafraza".
     predictions = torch.argmax(logits, dim=-1)
 
-    # Przekazujemy wyniki paczki do globalnego licznika metryk.
+    # --- KROK 2: AKUMULACJA WYNIKÓW ---
+    # metric.add_batch: Nie oceniamy modelu po jednej paczce.
+    # Zbieramy wszystkie przewidywania (predictions) i porównujemy je
+    # z prawdziwymi odpowiedziami (references/labels).
+    # Metryka gromadzi te dane w pamięci, by na końcu obliczyć średnią.
     metric.add_batch(predictions=predictions, references=batch["labels"])
 
+# metric.compute(): Finalne obliczenie wyników (np. % poprawnych odpowiedzi).
 print(f"👉 WYNIKI KOŃCOWE METRYKI: {metric.compute()}")
 
 # ==============================================================================
-# 7. TEST PO NAUCE (PORÓWNANIE I PRZENOSZENIE DANYCH)
+# 7. TEST PRAKTYCZNY I ZAPISYWANIE (WERYFIKACJA EFEKTÓW)
 # ==============================================================================
 print("\n[7/7] KROK 7: Końcowy test praktyczny i zapisywanie modelu...")
 
-with torch.no_grad():
+# Zmieniamy na inference_mode() dla lepszej wydajności i bezpieczeństwa.
+with torch.inference_mode():
     # --- WYJAŚNIENIE PRZENOSZENIA DANYCH (TO DEVICE) ---
-    # inputs = {k: v.to(device) for k, v in inputs.items()}
-    # To jest krytyczne! W PyTorch model i dane MUSZĄ być na tym samym "urządzeniu".
-    # Jeśli model jest na GPU, a dane na CPU (lub odwrotnie) - program się zawiesi.
-    # Ta linia bierze nasz słownik 'inputs' (tekst zamieniony na liczby) i upewnia się,
-    # że każda jego część (input_ids, attention_mask) jest tam, gdzie nasz model.
-    # WYJAŚNIENIE: Ponieważ nasz model przeszedł przez accelerator.prepare(),
-    # może znajdować się na specyficznym urządzeniu. Dane testowe muszą tam "dołączyć".
+    # Ta linia to "odprawa celna" dla danych. W PyTorch model i dane MUSZĄ przebywać
+    # w tej samej pamięci (np. oba na CPU lub oba na GPU).
+    # Ponieważ accelerator.prepare() mógł przenieść model na konkretne urządzenie,
+    # musimy upewnić się, że nasze nowe, testowe zdania też tam trafią.
     inputs = {k: v.to(device) for k, v in inputs.items()}
 
-    # Ponownie przepuszczamy te same zdania o Pawle przez model, który już się czegoś nauczył.
-    # .logits pobiera surowe wyniki z modelu po procesie fine-tuningu.
+    # --- PROCES PREDYKCJI (INFERENCJA) ---
+    # Przepuszczamy zdania "Pawel is here" i "Pawel is present" przez sieć.
+    # Model używa teraz swoich zaktualizowanych wag (tych "pokręteł", które
+    # ustawiliśmy w Kroku 5), aby ocenić podobieństwo.
     logits_post = model(**inputs).logits
 
-    # Ponownie zamieniamy logity (surowe punkty) na procenty (Softmax).
-    # Teraz sprawdzimy, czy model jest bardziej pewny, że "here" i "present" to to samo.
-    # F.softmax wykonuje operację: e^xi / suma(e^xj).
+    # --- SOFTMAX (INTERPRETACJA DLA CZŁOWIEKA) ---
+    # Softmax zamienia logity na prawdopodobieństwo.
+    # Interesuje nas wartość pod indeksem [0][1], czyli "Prawdopodobieństwo, że to parafraza".
+    # Wartość 1.0 = 100% pewności, 0.5 = model nie wie, 0.0 = na pewno nie parafraza.
     probs_post = F.softmax(logits_post, dim=-1)
 
 print("\n--- ANALIZA PORÓWNAWCZA (TEST SYNONIMÓW) ---")
