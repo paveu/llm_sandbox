@@ -171,6 +171,17 @@ train_dataloader, eval_dataloader, model, optimizer = accelerator.prepare(
 
 num_epochs = 3
 num_training_steps = num_epochs * len(train_dataloader)
+"""
+DLACZEGO OBLICZAMY ŁĄCZNĄ LICZBĘ KROKÓW (num_training_steps)?
+Wyobraź sobie, że masz książkę (zbiór danych), którą czytasz kawałkami (batch_size=4).
+1. len(train_dataloader) to liczba podejść do książki, żeby przeczytać ją raz (np. 50 razy po 4 strony).
+2. Ponieważ czytasz ją 3 razy (num_epochs=3), łącznie wykonasz 150 podejść (kroków).
+3. TO KLUCZOWE DLA SCHEDULERA (Kubek kawy):
+Scheduler musi wiedzieć, że masz dokładnie 150 kroków, żeby idealnie rozłożyć "energię uczenia" (Learning Rate).
+To tak, jakbyś miał kubek kawy na całą naukę - scheduler dba, byś pił go małymi łyczkami tak, 
+aby ostatnia kropla skończyła się dokładnie przy 150. kroku. 
+Dzięki temu model uczy się intensywnie na początku, a pod koniec robi to bardzo precyzyjnie.
+"""
 
 # --- WYJAŚNIENIE LR_SCHEDULER (HARMONOGRAMU UCZENIA) ---
 # lr_scheduler: Kontroluje "współczynnik uczenia" (Learning Rate).
