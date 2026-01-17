@@ -264,7 +264,14 @@ metric = evaluate.load("glue", "mrpc")
 # podczas treningu celowo wprowadzają szum, by model był odporniejszy.
 # W trybie eval() model staje się stabilny i deterministyczny.
 # model.eval() zmienia tryb pracy warstw (np. Dropout, Batchnorm) na odpowiedni dla fazy inferencji.
-model.eval()
+"""
+WYJAŚNIENIE FAZY INFERENCJI (WNIOSKOWANIA):
+To moment, w którym model wykorzystuje zamrożoną wiedzę do przewidywania wyników, nie zmieniając już swoich wag.
+1. Brak nauki: Nie wykonujemy kroków backward() ani optimizer.step() - oszczędzamy czas i pamięć.
+2. Stabilność: Warstwy takie jak Dropout są wyłączone, aby każda predykcja była stała i oparta na wszystkich neuronach.
+3. Kierunek: Dane płyną wyłącznie "do przodu" (Forward Pass) - od tekstu wejściowego do logitów na wyjściu.
+To odpowiednik wykorzystania wiedzy w praktyce (np. przez użytkownika aplikacji) po zakończeniu etapu nauki.
+"""
 
 for batch in eval_dataloader:
     # --- TRYB BEZ GRADIENTÓW (ZAMIAST no_grad MOŻNA UŻYĆ inference_mode) ---
