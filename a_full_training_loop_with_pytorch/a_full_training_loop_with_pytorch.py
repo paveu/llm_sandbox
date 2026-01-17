@@ -23,17 +23,20 @@ print(f"👉 Ładowanie modelu bazowego: {checkpoint}")
 # Accelerator: Automatycznie zarządza sprzętem (CPU/GPU/TPU).
 # Na Twoim Intel Ultra 7 przypisze obliczenia do procesora.
 # To serce biblioteki 🤗 Accelerate, które dba o wydajność na Twoim sprzęcie.
+# Głównym zadaniem Accelerate jest umożliwienie treningu rozproszonego na wielu GPU/TPU przy minimalnych zmianach w kodzie.
 accelerator = Accelerator()
 device = accelerator.device
 print(f"👉 Aktywne urządzenie (Device): {device}")
 
 # Ładowanie danych MRPC (czy zdania są parafrazami)
 # Dataset: Zbiór par zdań. LABEL (Etykieta) to wynik: 1 (parafraza), 0 (różne).
+# Drugi argument w load_dataset (np. 'mrpc') określa konkretne zadanie lub podzbiór (subset) w ramach danego benchmarku GLUE.
 raw_datasets = load_dataset("glue", "mrpc")
 tokenizer = AutoTokenizer.from_pretrained(checkpoint)
 
 def tokenize_function(example):
     # Funkcja mapująca: zamieniamy tekst na liczby zrozumiałe dla BERT-a.
+    # Użycie batched=True w metodzie .map() przetwarza wiele przykładów naraz, co radykalnie przyspiesza proces tokenizacji.
     return tokenizer(example["sentence1"], example["sentence2"], truncation=True)
 
 print("👉 Rozpoczynam tokenizację (zamiana tekstu na wektory liczbowe)...")
@@ -42,6 +45,7 @@ tokenized_datasets = raw_datasets.map(tokenize_function, batched=True)
 # CZYSZCZENIE DANYCH: PyTorch akceptuje tylko liczby. Usuwamy tekst, zostawiamy tensory.
 # W czystym PyTorch (w przeciwieństwie do Trainera) musimy to zrobić ręcznie,
 # inaczej model "pogubi się" próbując przetwarzać napisy.
+# Usuwamy kolumny surowego tekstu, bo model oczekuje tensorów liczbowych; próba ich zachowania mogłaby spowodować błędy.
 print("👉 Czyszczenie kolumn i ustawianie formatu tensora...")
 tokenized_datasets = tokenized_datasets.remove_columns(["sentence1", "sentence2", "idx"])
 tokenized_datasets = tokenized_datasets.rename_column("label", "labels")
@@ -62,6 +66,7 @@ print(f"👉 Gotowe! Rozmiar zbioru treningowego: {len(train_dataset)}, walidacy
 # 2. DATALOADERY (POMPY DANYCH - SZCZEGÓŁOWE WYJAŚNIENIE)
 # ==============================================================================
 # DataCollator: Odpowiada za dynamiczne wyrównywanie długości zdań w paczkach.
+# Dynamiczne dopełnianie (Dynamic Padding) jest wydajniejsze niż stałe, bo ogranicza rozmiar do najdłuższego zdania TYLKO w danej partii (batch).
 data_collator = DataCollatorWithPadding(tokenizer=tokenizer)
 
 # train_dataloader: To "taśmociąg", który dostarcza dane do modelu podczas nauki.
@@ -110,10 +115,12 @@ model = AutoModelForSequenceClassification.from_pretrained(checkpoint, num_label
 #   do nowego zadania (fine-tuning).
 # - 'W' w AdamW (Weight Decay): Technika zapobiegająca przeuczeniu – model
 #   stara się trzymać wagi na niskim poziomie, co promuje prostsze rozwiązania.
+# Kluczową różnicą między Adam a AdamW jest to, że AdamW stosuje odizolowaną (decoupled) regularyzację spadku wag.
 optimizer = AdamW(model.parameters(), lr=5e-5)
 
 z1, z2 = "Pawel is here", "Pawel is present"
 # Zamieniamy nasze zdania testowe na format modelu i wysyłamy na CPU/GPU.
+# Przenosimy dane na device (np. GPU), ponieważ model i dane muszą znajdować się na tym samym urządzeniu dla obliczeń.
 inputs = tokenizer(z1, z2, return_tensors="pt").to(device)
 
 # --- WYJAŚNIENIE TRYBU INFERENCJI I INTERPRETACJI WYNIKÓW ---
@@ -127,6 +134,7 @@ with torch.inference_mode():
     # prawdy czy fałszu, ale "napięciem" na neuronach wyjściowych.
     # LOGITY to właśnie te surowe wartości – im wyższy logit, tym bardziej model
     # "wierzy" w daną klasę, ale te liczby są nienormalizowane (np. mogą wynosić 5.4 i -1.2).
+    # Pole 'token_type_ids' w BERT informuje model, który token należy do której sekwencji w parze zdań.
     logits_pre = model(**inputs).logits
 
     # F.softmax(logits_pre, dim=-1) - Magiczna funkcja matematyczna.
@@ -156,6 +164,7 @@ print("\n[4/7] KROK 4: Konfiguracja Accelerate i Schedulera...")
 #    Intel Ultra 7, jak i na potężnym klastrze obliczeniowym, bez zmiany ani jednej linii kodu.
 # WYJAŚNIENIE: Zamiast ręcznie pisać .to(device) dla każdego elementu,
 # powierzasz to zadanie Acceleratorowi, który dba o maksymalną wydajność.
+# Przy użyciu Accelerate, włączenie 'fp16=True' w argumentach umożliwiłoby trening z 16-bitową precyzją, oszczędzając pamięć i przyspieszając naukę.
 train_dataloader, eval_dataloader, model, optimizer = accelerator.prepare(
     train_dataloader, eval_dataloader, model, optimizer
 )
@@ -173,6 +182,7 @@ num_training_steps = num_epochs * len(train_dataloader)
 # - num_training_steps: Harmonogram musi wiedzieć, jak długo trwa cały trening,
 #   aby móc idealnie rozłożyć spadek prędkości (tzw. decay) w czasie.
 # WYJAŚNIENIE: Scheduler zapobiega "przestrzeleniu" celu (overshooting) pod koniec treningu.
+# Parametr 'eval_strategy' (w klasie Trainer) określałby, czy ewaluacja odbywa się co określoną liczbę kroków ('steps'), czy co epokę.
 lr_scheduler = get_scheduler(
     "linear",
     optimizer=optimizer,
@@ -195,6 +205,7 @@ for epoch in range(num_epochs):
     print(f"\n--- Epoka {epoch + 1} / {num_epochs} ---")
     for step, batch in enumerate(train_dataloader):
         # --- KROK 1: FORWARD PASS (PRZEJŚCIE DO PRZODU) ---
+        # Logika kolejności: Najpierw Forward, ponieważ model musi najpierw "zgadnąć" wynik, żebyśmy mogli sprawdzić, jak bardzo się pomylił względem prawdy.
         # Przepuszczamy dane przez wszystkie warstwy sieci. Model generuje
         # przewidywania (logits) i automatycznie porównuje je z poprawnymi
         # odpowiedziami (labels) zawartymi w 'batch'.
@@ -206,30 +217,36 @@ for epoch in range(num_epochs):
         loss = outputs.loss
 
         # --- KROK 3: BACKWARD PASS (PROPAGACJA WSTECZNA) ---
+        # Logika kolejności: Na podstawie błędu (loss) obliczamy gradienty (mapę poprawek). Bez błędu nie wiedzielibyśmy, co poprawiać.
         # accelerator.backward(loss): Obliczamy tzw. gradienty dla każdego parametru.
         # Gradient to informacja: "O ile i w którą stronę muszę przesunąć to konkretne
         # pokrętło w modelu, żeby strata (loss) była mniejsza?".
-        # Dzięki 'accelerate' proces ten jest zoptymalizowany pod Twój sprzęt.
+        # W bibliotece Accelerate zastępujemy standardowe loss.backward() metodą accelerator.backward(loss).
         accelerator.backward(loss)
 
         # --- KROK 4: OPTIMIZER STEP (AKTUALIZACJA WAG) ---
+        # Logika kolejności: Dopiero teraz mamy "mapę" zmian (gradienty) i możemy faktycznie fizycznie zmienić wagi modelu (przekręcić pokrętła).
         # Teraz, gdy wiemy już, w którą stronę kręcić pokrętłami (mamy gradienty),
         # optymalizator AdamW faktycznie wykonuje ten ruch, zmieniając wagi modelu.
         optimizer.step()
 
         # --- KROK 5: SCHEDULER STEP (KOREKTA PRĘDKOŚCI) ---
+        # Logika kolejności: Skoro model właśnie zrobił krok i się czegoś nauczył, aktualizujemy LR, żeby stawał się coraz precyzyjniejszy w kolejnych krokach.
         # Zgodnie z planem liniowym, po każdej aktualizacji wag nieco zmniejszamy
         # współczynnik uczenia (Learning Rate). Model z czasem staje się coraz
         # bardziej "ostrożny" w swoich zmianach.
         lr_scheduler.step()
 
         # --- KROK 6: ZERO GRAD (CZYSZCZENIE PAMIĘCI) ---
+        # Logika kolejności: Na końcu usuwamy stare gradienty, bo już zostały zużyte do poprawy wag. Musimy mieć "czystą kartę" dla następnej paczki danych.
         # KLUCZOWE: PyTorch domyślnie dodaje nowe gradienty do starych.
         # Jeśli ich nie wyzerujemy, model "pogubi się", sumując poprawki z poprzednich
         # paczek danych. Czyścimy tablicę przed kolejnym krokiem.
         optimizer.zero_grad()
 
         progress_bar.update(1)
+
+# 'Gradient Accumulation' pozwala symulować większy batch size poprzez akumulację gradientów z kilku mniejszych kroków przed wykonaniem optimizer.step().
 
 # ==============================================================================
 # 6. EWALUACJA (EGZAMIN GENERALNY MODELU)
@@ -239,12 +256,14 @@ print("\n[6/7] KROK 6: Rozpoczynam sprawdzian modelu (Ewaluacja)...")
 # evaluate.load: Pobieramy gotowy "arkusz ocen" dla zadania MRPC.
 # Metryki (takie jak Accuracy czy F1-score) pozwalają nam obiektywnie ocenić,
 # czy model faktycznie rozumie język, czy tylko zgaduje.
+# Zadaniem funkcji compute_metrics (lub biblioteki evaluate) jest przekonwertowanie logitów na przewidywania i obliczenie miar jakości.
 metric = evaluate.load("glue", "mrpc")
 
-# model.eval(): Przełączamy model w tryb "Egzaminu".
+# model.eval(): Przełącza model w tryb "Egzaminu".
 # Jest to absolutnie kluczowe! Wyłącza mechanizmy takie jak Dropout, które
 # podczas treningu celowo wprowadzają szum, by model był odporniejszy.
 # W trybie eval() model staje się stabilny i deterministyczny.
+# model.eval() zmienia tryb pracy warstw (np. Dropout, Batchnorm) na odpowiedni dla fazy inferencji.
 model.eval()
 
 for batch in eval_dataloader:
@@ -252,6 +271,7 @@ for batch in eval_dataloader:
     # Podczas sprawdzianu nie chcemy zmieniać wag modelu ani tracić pamięci
     # na zapamiętywanie ścieżki obliczeń do Backpropagation.
     # To sprawia, że proces jest dużo szybszy i zużywa ułamek pamięci RAM.
+    # Użycie torch.no_grad() lub inference_mode podczas ewaluacji oszczędza pamięć i przyspiesza obliczenia poprzez wyłączenie śledzenia gradientów.
     with torch.inference_mode():
         outputs = model(**batch)
 
@@ -272,6 +292,7 @@ for batch in eval_dataloader:
     metric.add_batch(predictions=predictions, references=batch["labels"])
 
 # metric.compute(): Finalne obliczenie wyników (np. % poprawnych odpowiedzi).
+# Jeśli do obiektu Trainer nie podano by 'eval_dataset', trening by trwał, ale nie otrzymalibyśmy raportów o metrykach podczas nauki.
 print(f"👉 WYNIKI KOŃCOWE METRYKI: {metric.compute()}")
 
 # ==============================================================================
