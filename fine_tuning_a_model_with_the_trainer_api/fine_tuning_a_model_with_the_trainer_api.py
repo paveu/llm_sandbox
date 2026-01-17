@@ -183,12 +183,14 @@ print(f"👉 Pewność PRZED nauką (Softmax): {probs_pre[0][1].item():.2%}")
 # ==============================================================================
 # 4. METRYKI, GRADIENTY I LOSS (Zasady oceniania)
 # ==============================================================================
+
+# Pobieramy gotowy "arkusz ocen" poza funkcją, aby uniknąć przeładowywania go.
+metric = evaluate.load("glue", "mrpc")
+
 # TA FUNKCJA TO "EGZAMINATOR". Określa, jak model będzie oceniany podczas nauki.
 def compute_metrics(eval_preds):
     # EWALUACJA (Evaluation): Aby ocenić wydajność modelu w sposób zrozumiały dla człowieka,
     # potrzebujemy metryk, a nie tylko samej straty (loss).
-    # Biblioteka 'evaluate' dostarcza prosty sposób na ładowanie metryk (np. GLUE MRPC).
-    metric = evaluate.load("glue", "mrpc")
 
     # eval_preds to paczka zawierająca:
     # 1. Logity (co model "myśli" - surowe liczby)
