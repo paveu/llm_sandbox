@@ -9,7 +9,13 @@ from transformers import (
     TrainingArguments,
     Trainer,
     DataCollatorWithPadding,
+    EarlyStoppingCallback,
 )
+import wandb
+
+import os
+
+os.environ['WANDB_API_KEY'] = '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'
 
 # ==============================================================================
 # 1. PRZYGOTOWANIE DANYCH I POJĘĆ (FILOZOFIA PRE-TRAININGU)
@@ -187,6 +193,7 @@ print(f"👉 Pewność PRZED nauką (Softmax): {probs_pre[0][1].item():.2%}")
 # Pobieramy gotowy "arkusz ocen" poza funkcją, aby uniknąć przeładowywania go.
 metric = evaluate.load("glue", "mrpc")
 
+
 # TA FUNKCJA TO "EGZAMINATOR". Określa, jak model będzie oceniany podczas nauki.
 def compute_metrics(eval_preds):
     # EWALUACJA (Evaluation): Aby ocenić wydajność modelu w sposób zrozumiały dla człowieka,
@@ -218,12 +225,21 @@ def compute_metrics(eval_preds):
     # Wynik to słownik zawierający Accuracy (dokładność) oraz F1 Score (średnia precyzji i pełności).
     # Accuracy mówi: "Ile razy trafiłeś?". F1 mówi: "Jak dobrze radzisz sobie z obiema klasami?".
     # W zadaniu MRPC metryka F1 jest ważniejsza niż samo Accuracy, ponieważ zbiory te bywają niezbalansowane.
+
+    # --- INTERPRETACJA METRYK W CZASIE RZECZYWISTYM ---
+    # Jeśli Accuracy rośnie wolniej niż spada Loss, to znaczy, że model staje się
+    # pewniejszy swoich decyzji, ale jeszcze nie na tyle, by zmienić klasyfikację błędnych przykładów.
     return metric.compute(predictions=predictions, references=labels)
+
 
 # ==============================================================================
 # 5. KONFIGURACJA TRENINGU (Zoptymalizowana pod Intel Ultra 7 + Zaawansowane funkcje)
 # ==============================================================================
 # TrainingArguments to "centrum sterowania" procesem nauki. To tutaj decydujemy o strategii.
+
+# Inicjalizacja Weights & Biases do śledzenia eksperymentów
+wandb.init(project="transformer-fine-tuning", name="bert-mrpc-analysis-huggingface-trainer-api")
+
 training_args = TrainingArguments(
     output_dir="./test-trainer-cpu",
     # Używamy CPU, bo GPU zawiesza laptopa przy obliczeniach AI.
@@ -234,6 +250,8 @@ training_args = TrainingArguments(
     # EVALUATION STRATEGY: Pozwala kontrolować częstotliwość przeprowadzania testów.
     # "epoch" oznacza sprawdzian (eval) po każdej pełnej epoce (przeczytaniu całych danych).
     # Dzięki temu po każdej epoce zobaczymy, czy model staje się mądrzejszy.
+    # ANALIZA: Jeśli Validation Loss zacznie rosnąć po 2. epoce, mimo że Train Loss spada,
+    # mamy do czynienia z przeuczeniem (Overfitting).
     eval_strategy="epoch",
 
     # LEARNING RATE SCHEDULER: Model domyślnie zmniejsza "długość kroku" (LR) wraz z treningiem.
@@ -257,12 +275,19 @@ training_args = TrainingArguments(
     num_train_epochs=3,  # Model przeczyta 200 zdań 3 razy (lepsza stabilność).
     # LEARNING_RATE: To "pewność siebie" modelu. 2e-5 to bardzo mała wartość (0.00002).
     # Małe kroki zapobiegają "przeskoczeniu" idealnego ustawienia wag (tzw. overshooting).
+    # Jeśli krzywa straty na W&B jest bardzo "poszarpana", warto zmniejszyć tę wartość.
     learning_rate=2e-5,  # "Długość kroku" (jak mocno gradient zmienia wagi).
+
     per_device_train_batch_size=4,  # Wykorzystujemy 14 rdzeni Twojego procesora.
+    # ANALIZA BATCHA: Większy batch size (np. 16, 32) daje gładsze krzywe uczenia,
+    # bo kierunek zmian wag jest uśredniany z większej liczby przykładów.
+
     weight_decay=0.01,  # "Hamulec": zapobiega przypisywaniu ogromnych wag słowom.
     # WEIGHT DECAY to kara za zbyt duże wagi. Zapobiega sytuacji, w której model skupia się
     # obsesyjnie na jednym słowie (np. "the") ignorując resztę kontekstu.
     logging_steps=5,  # Co 5 paczek wypisz stan w konsoli.
+    report_to="wandb",  # Wysyłanie logów do Weights & Biases
+    load_best_model_at_end=True,  # Załaduj najlepszy model na końcu (ten z najniższym Validation Loss).
 )
 
 # ==============================================================================
@@ -279,6 +304,11 @@ trainer = Trainer(
     data_collator=data_collator,  # Maszyna do wyrównywania długości zdań (padding).
     processing_class=tokenizer,  # Nasz tłumacz tekstu na liczby.
     compute_metrics=compute_metrics,  # Nasz egzaminator z punktu 4.
+
+    # EARLY STOPPING CALLBACK: Mechanizm bezpieczeństwa.
+    # Jeśli przez 3 sprawdziany (patience=3) model nie poprawi wyniku na zbiorze walidacyjnym,
+    # Trainer przerwie naukę, chroniąc model przed "wykuciem danych na blachę" (Overfitting).
+    callbacks=[EarlyStoppingCallback(early_stopping_patience=3)],
 )
 
 # ==============================================================================
@@ -291,6 +321,10 @@ print("\n[4/6] Start Fine-tuningu (Trening nowej głowy na Intel Ultra 7)...")
 # 2. Oblicza błąd (Loss) - "Sprawdzanie błędu"
 # 3. Oblicza gradienty (Backward pass) - "Szukanie przyczyny błędu"
 # 4. Aktualizuje pokrętła (Optimizer step) - "Poprawa wiedzy (zmiana wag)"
+
+# --- JAK INTERPRETOWAĆ LOGI W TRAKCIE? ---
+# Jeśli "Training Loss" spada, a "Validation Loss" stoi w miejscu lub rośnie:
+# Oznacza to, że model traci zdolność generalizacji. Ciesz się wtedy, że masz EarlyStopping!
 trainer.train()
 
 print("\n[5/6] Sprawdzanie zmian w 'mózgu' modelu...")
@@ -314,12 +348,12 @@ print(f"👉 Wagi po:    {weights_after}")
 # Wynik 'diff' mówi nam: "O tyle model stał się inny po przeczytaniu książki".
 
 diff = weights_after - weights_before
-print(f"👉 Różnica (fizyczny efekt nauki): {diff}")
 
 # DLACZEGO TO JEST WAŻNE DLA POCZĄTKUJĄCEGO?
 # Jeśli 'diff' wynosiłoby same zera, oznaczałoby to, że model niczego się nie nauczył
 # (np. Learning Rate był za mały lub dane były błędne).
 # Każda liczba różna od zera w 'diff' to dowód na to, że model "żyje" i reaguje na dane.
+# Duże wartości w 'diff' mogą sugerować, że model gwałtownie zmieniał zdanie (niestabilny trening).
 print(f"👉 Różnica (fizyczny efekt nauki): {diff}")
 
 # ==============================================================================
@@ -355,9 +389,8 @@ with torch.inference_mode():
 # 2. Po nauce: Głowica "wie", że sygnały o synonimach z Heads są ważne.
 #    Dlatego logity dla klasy 1 powinny być teraz znacznie wyższe.
 #
-# Jeśli 'confidence' jest wyższy niż przed treningiem, to znaczy, że fizyczne
-# przesunięcie wag (nasze 'diff') zakodowało w modelu umiejętność
-# rozpoznawania, że "here" i "present" to w tym kontekście to samo.
+# ANALIZA: Jeśli pewność (Confidence) wzrosła, np. z 52% na 88%, Twój fine-tuning
+# odniósł sukces – model fizycznie "zrozumiał" intencję Twojego zadania.
 
 # ZMIANA PEWNOŚCI: Twoje testowe zdania ("Pawel is here" vs "Pawel is present")
 # powinny po treningu uzyskać znacznie wyższy wynik procentowy w klasie 1 (parafraza),

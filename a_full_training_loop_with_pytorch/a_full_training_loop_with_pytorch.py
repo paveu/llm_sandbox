@@ -12,6 +12,28 @@ from transformers import (
 from accelerate import Accelerator
 from tqdm.auto import tqdm
 import evaluate
+import wandb
+import os
+
+# ==============================================================================
+# 0. KONFIGURACJA W&B (NOWY KONTEKST LOGOWANIA)
+# ==============================================================================
+# Klucz API do Weights & Biases - Twoje "centrum dowodzenia" wizualizacją
+os.environ['WANDB_API_KEY'] = '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'
+
+# Inicjalizacja projektu w chmurze W&B.
+# W pętli manualnej musimy sami mówić bibliotece, co i kiedy ma wysyłać na serwer.
+wandb.init(
+    project="transformer-fine-tuning",
+    name="bert-mrpc-manual-pytorch-accelerate-full",
+    config={
+        "learning_rate": 5e-5,
+        "num_epochs": 3,
+        "batch_size": 4,
+        "architecture": "bert-base-uncased",
+        "dataset": "GLUE-MRPC"
+    }
+)
 
 # ==============================================================================
 # 1. INICJALIZACJA I PRZYGOTOWANIE DANYCH
@@ -104,6 +126,12 @@ print("\n[3/7] KROK 3: Ładowanie modelu i analiza przed treningiem...")
 # - num_labels=2: Mówi modelowi, że na końcu ma mieć 2 wyjścia (w tym przypadku:
 #   0 - to nie parafraza, 1 - to parafraza).
 model = AutoModelForSequenceClassification.from_pretrained(checkpoint, num_labels=2)
+
+# --- FIZYCZNY ŚLAD WAG PRZED NAUKĄ ---
+# Zapisujemy wycinek wag klasyfikatora, aby później udowodnić 'diff' (efekt nauki).
+# Pętla manualna pozwala nam na taki wgląd w dowolnym momencie.
+weights_before = model.classifier.weight.data[0][:5].clone()
+print(f"👉 Wagi nowej głowy PRZED treningiem (losowe): {weights_before}")
 
 # --- SILNIK UCZENIA (OPTYMALIZATOR) ---
 # AdamW: Wyrafinowana wersja algorytmu spadku gradientu. To on decyduje,
@@ -200,6 +228,7 @@ lr_scheduler = get_scheduler(
     num_warmup_steps=0,
     num_training_steps=num_training_steps,
 )
+
 # ==============================================================================
 # 5. PĘTLA TRENINGOWA (PROCES NAUKI)
 # ==============================================================================
@@ -214,6 +243,8 @@ model.train()
 
 for epoch in range(num_epochs):
     print(f"\n--- Epoka {epoch + 1} / {num_epochs} ---")
+    epoch_loss = 0  # Inicjalizacja licznika błędu dla całej epoki
+
     for step, batch in enumerate(train_dataloader):
         # --- KROK 1: FORWARD PASS (PRZEJŚCIE DO PRZODU) ---
         # Logika kolejności: Najpierw Forward, ponieważ model musi najpierw "zgadnąć" wynik, żebyśmy mogli sprawdzić, jak bardzo się pomylił względem prawdy.
@@ -226,6 +257,16 @@ for epoch in range(num_epochs):
         # 'loss' to pojedyncza liczba mówiąca o tym, jak bardzo model się pomylił.
         # Im większy błąd, tym wyższa strata. Naszym celem jest zminimalizowanie tej liczby.
         loss = outputs.loss
+        epoch_loss += loss.item()  # Dodajemy stratę z tego kroku do sumy epoki
+
+        # --- NOWY KONTEKST: LOGOWANIE DO W&B ---
+        # Wysyłamy dane do chmury w każdym kroku. Dzięki temu na W&B zobaczysz
+        # gęsty wykres "Train Loss", który pokazuje stabilność treningu.
+        wandb.log({
+            "step_loss": loss.item(),
+            "current_lr": lr_scheduler.get_last_lr()[0],
+            "epoch": epoch + 1
+        })
 
         # --- KROK 3: BACKWARD PASS (PROPAGACJA WSTECZNA) ---
         # Logika kolejności: Na podstawie błędu (loss) obliczamy gradienty (mapę poprawek). Bez błędu nie wiedzielibyśmy, co poprawiać.
@@ -257,11 +298,17 @@ for epoch in range(num_epochs):
 
         progress_bar.update(1)
 
+    # Logujemy średnią stratę na koniec każdej epoki
+    avg_epoch_loss = epoch_loss / len(train_dataloader)
+    wandb.log({"avg_epoch_loss": avg_epoch_loss, "epoch": epoch + 1})
+    print(f"👉 Średni Loss w epoce {epoch + 1}: {avg_epoch_loss:.4f}")
+
 # 'Gradient Accumulation' pozwala symulować większy batch size poprzez akumulację gradientów z kilku mniejszych kroków przed wykonaniem optimizer.step().
 
 # ==============================================================================
 # 6. EWALUACJA (EGZAMIN GENERALNY MODELU)
 # ==============================================================================
+
 print("\n[6/7] KROK 6: Rozpoczynam sprawdzian modelu (Ewaluacja)...")
 
 # evaluate.load: Pobieramy gotowy "arkusz ocen" dla zadania MRPC.
@@ -283,7 +330,6 @@ To moment, w którym model wykorzystuje zamrożoną wiedzę do przewidywania wyn
 3. Kierunek: Dane płyną wyłącznie "do przodu" (Forward Pass) - od tekstu wejściowego do logitów na wyjściu.
 To odpowiednik wykorzystania wiedzy w praktyce (np. przez użytkownika aplikacji) po zakończeniu etapu nauki.
 """
-
 for batch in eval_dataloader:
     # --- TRYB BEZ GRADIENTÓW (ZAMIAST no_grad MOŻNA UŻYĆ inference_mode) ---
     # Podczas sprawdzianu nie chcemy zmieniać wag modelu ani tracić pamięci
@@ -310,13 +356,23 @@ for batch in eval_dataloader:
     metric.add_batch(predictions=predictions, references=batch["labels"])
 
 # metric.compute(): Finalne obliczenie wyników (np. % poprawnych odpowiedzi).
-# Jeśli do obiektu Trainer nie podano by 'eval_dataset', trening by trwał, ale nie otrzymalibyśmy raportów o metrykach podczas nauki.
-print(f"👉 WYNIKI KOŃCOWE METRYKI: {metric.compute()}")
+final_results = metric.compute()
+print(f"👉 WYNIKI KOŃCOWE METRYKI: {final_results}")
+
+# Logujemy wyniki końcowe do W&B, aby mieć je w tabeli porównawczej
+wandb.log(final_results)
 
 # ==============================================================================
-# 7. TEST PRAKTYCZNY I ZAPISYWANIE (WERYFIKACJA EFEKTÓW)
+# 7. ANALIZA FIZYCZNA I ZAPISYWANIE (WERYFIKACJA EFEKTÓW)
 # ==============================================================================
-print("\n[7/7] KROK 7: Końcowy test praktyczny i zapisywanie modelu...")
+print("\n[7/7] KROK 7: Końcowy test praktyczny i analiza 'diff'...")
+
+# --- ANALIZA FIZYCZNA ZMIAN ---
+# Pobieramy wagi po treningu i porównujemy z tymi, które zapisaliśmy w Kroku 3.
+# Każda liczba różna od zera w 'diff' to dowód na to, że pętla manualna zadziałała.
+weights_after = model.classifier.weight.data[0][:5].clone().cpu()
+diff = weights_after - weights_before.cpu()
+print(f"👉 Różnica w wagach klasyfikatora (Ślad nauki): {diff}")
 
 # Zmieniamy na inference_mode() dla lepszej wydajności i bezpieczeństwa.
 with torch.inference_mode():
@@ -329,8 +385,7 @@ with torch.inference_mode():
 
     # --- PROCES PREDYKCJI (INFERENCJA) ---
     # Przepuszczamy zdania "Pawel is here" i "Pawel is present" przez sieć.
-    # Model używa teraz swoich zaktualizowanych wag (tych "pokręteł", które
-    # ustawiliśmy w Kroku 5), aby ocenić podobieństwo.
+    # Model używa teraz swoich zaktualizowanych wag.
     logits_post = model(**inputs).logits
 
     # --- SOFTMAX (INTERPRETACJA DLA CZŁOWIEKA) ---
@@ -344,11 +399,20 @@ print(f"👉 Zdanie A: {z1} | Zdanie B: {z2}")
 print(f"👉 Pewność podobieństwa PRZED nauką: {probs_pre[0][1].item():.2%}")
 print(f"👉 Pewność podobieństwa PO nauce:    {probs_post[0][1].item():.2%}")
 
+# Logujemy końcową zmianę pewności do W&B
+wandb.log({
+    "confidence_before": probs_pre[0][1].item(),
+    "confidence_after": probs_post[0][1].item(),
+    "weight_diff_magnitude": torch.norm(diff).item()
+})
+
 # Zapisujemy efekt naszej pracy:
 # unwrap_model: Wyciąga czysty model PyTorch z "opakowania" Accelerate.
-# Jest to niezbędne, aby zapisać pliki w standardowym formacie Transformers.
 unwrapped_model = accelerator.unwrap_model(model)
 path = "./pytorch_model_custom"
 unwrapped_model.save_pretrained(path)
 tokenizer.save_pretrained(path)
 print(f"\n✅ Trening zakończony! Model zapisany w folderze: {path}")
+
+# Zamykamy sesję Weights & Biases
+wandb.finish()

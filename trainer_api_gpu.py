@@ -7,7 +7,7 @@ from transformers import (
     AutoModelForSequenceClassification,
     TrainingArguments,
     Trainer,
-    DataCollatorWithPadding
+    DataCollatorWithPadding,
 )
 
 # ==========================================
@@ -30,6 +30,7 @@ tokenizer = AutoTokenizer.from_pretrained(checkpoint)
 # 2. PRZYGOTOWANIE (PREPROCESSING)
 # ==========================================
 
+
 def tokenize_function(example):
     # Podajemy dwa zdania. Tokenizer doda specjalne separatory (np. [SEP] w BERT),
     # aby model wiedział, gdzie kończy się pierwsze zdanie, a zaczyna drugie.
@@ -49,6 +50,7 @@ data_collator = DataCollatorWithPadding(tokenizer=tokenizer)
 # ==========================================
 # 3. METRYKI I OCENA
 # ==========================================
+
 
 def compute_metrics(eval_preds):
     # Ładujemy funkcję oceniającą specyficzną dla zbioru MRPC (Accuracy i F1).

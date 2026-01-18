@@ -7,7 +7,7 @@ from transformers import (
     AutoModelForSequenceClassification,
     TrainingArguments,
     Trainer,
-    DataCollatorWithPadding
+    DataCollatorWithPadding,
 )
 
 # ==========================================
@@ -22,7 +22,8 @@ tokenizer = AutoTokenizer.from_pretrained(checkpoint)
 # --- DIAGNOSTYKA: SUROWE DANE ---
 sample = raw_datasets["train"][0]
 print(
-    f"👉 Przykład surowego tekstu:\n   Zdanie 1: {sample['sentence1']}\n   Zdanie 2: {sample['sentence2']}\n   Etykieta (Label): {sample['label']} (1=Parafraza, 0=Różne)")
+    f"👉 Przykład surowego tekstu:\n   Zdanie 1: {sample['sentence1']}\n   Zdanie 2: {sample['sentence2']}\n   Etykieta (Label): {sample['label']} (1=Parafraza, 0=Różne)"
+)
 
 
 def tokenize_function(example):

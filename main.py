@@ -1,7 +1,11 @@
 import torch
 import torch.nn.functional as F
 from datasets import load_dataset
-from transformers import AutoTokenizer, DataCollatorWithPadding, AutoModelForSequenceClassification
+from transformers import (
+    AutoTokenizer,
+    DataCollatorWithPadding,
+    AutoModelForSequenceClassification,
+)
 
 # 1. Przygotowanie (to co już znasz)
 checkpoint = "bert-base-uncased"
@@ -11,6 +15,7 @@ model = AutoModelForSequenceClassification.from_pretrained(checkpoint)
 
 raw_datasets = load_dataset("glue", "mrpc")
 print("raw_datasets", raw_datasets)
+
 
 def tokenize_function(example):
     return tokenizer(example["sentence1"], example["sentence2"], truncation=True)
@@ -49,7 +54,7 @@ for i in range(2):
 
     # Wyciągamy prawdopodobieństwo dla klasy "Parafraza" (index 1)
     is_paraphrase_prob = predictions[i][1].item()
-    actual_label = "Parafraza" if raw_texts['label'][i] == 1 else "To nie parafraza"
+    actual_label = "Parafraza" if raw_texts["label"][i] == 1 else "To nie parafraza"
 
     print(f"WERDYKT MODELU: {'Parafraza' if is_paraphrase_prob > 0.5 else 'To nie parafraza'}")
     print(f"PEWNOŚĆ MODELU: {is_paraphrase_prob:.2%}")
