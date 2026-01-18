@@ -253,6 +253,10 @@ training_args = TrainingArguments(
     # ANALIZA: Jeśli Validation Loss zacznie rosnąć po 2. epoce, mimo że Train Loss spada,
     # mamy do czynienia z przeuczeniem (Overfitting).
     eval_strategy="epoch",
+    # SAVE STRATEGY: Musi być identyczna jak eval_strategy, gdy używamy load_best_model_at_end.
+    # Dzięki temu Trainer po każdym sprawdzianie (epoch) zapisze wagi modelu na dysku,
+    # co pozwoli mu na samym końcu wrócić do tej wersji, która miała najlepsze wyniki.
+    save_strategy="epoch",
 
     # LEARNING RATE SCHEDULER: Model domyślnie zmniejsza "długość kroku" (LR) wraz z treningiem.
     # "cosine" (kosinusoidalny) to zaawansowany sposób: najpierw model uczy się szybko,
