@@ -4,9 +4,9 @@ version = "0.1.0"
 description = "Add your description here"
 requires-python = ">=3.14"
 dependencies = [
-  "transformers[sentencepiece] == 4.57.6",
-  "datasets == 4.5.0",
-  "torch == 2.9.1",
+  "transformers[sentencepiece]==4.57.6",
+  "datasets==4.5.0",
+  "torch==2.9.1",
   "pillow == 12.0.0",
   "evaluate == 0.4.6",
   "accelerate >= 0.35.0",
@@ -17,6 +17,8 @@ dependencies = [
   "requests>=2.32.5",
   "ipykernel>=7.1.0",
   "pandas-stubs~=2.3.3",
+  "pandas>=2.3.3",
+  "faiss-cpu>=1.13.2",
 ]
 
 [tool.black]
