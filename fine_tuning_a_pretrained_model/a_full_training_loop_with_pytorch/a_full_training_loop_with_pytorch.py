@@ -409,7 +409,7 @@ wandb.log({
 # Zapisujemy efekt naszej pracy:
 # unwrap_model: Wyciąga czysty model PyTorch z "opakowania" Accelerate.
 unwrapped_model = accelerator.unwrap_model(model)
-path = "./pytorch_model_custom"
+path = "pytorch_model_custom"
 unwrapped_model.save_pretrained(path)
 tokenizer.save_pretrained(path)
 print(f"\n✅ Trening zakończony! Model zapisany w folderze: {path}")

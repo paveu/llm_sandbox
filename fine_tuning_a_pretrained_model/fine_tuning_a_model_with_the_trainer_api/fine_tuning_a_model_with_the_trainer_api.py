@@ -241,7 +241,7 @@ def compute_metrics(eval_preds):
 wandb.init(project="transformer-fine-tuning", name="bert-mrpc-analysis-huggingface-trainer-api")
 
 training_args = TrainingArguments(
-    output_dir="./test-trainer-cpu",
+    output_dir="test-trainer-cpu",
     # Używamy CPU, bo GPU zawiesza laptopa przy obliczeniach AI.
     use_cpu=True,
 
