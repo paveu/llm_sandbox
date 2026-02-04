@@ -5,6 +5,10 @@ WSTĘP: ALGORYTM TRENOWANIA WORDPIECE (ROZDZIAŁ 6.6)
 WordPiece to algorytm tokenizacji subwordowej używany m.in. w modelu BERT.
 Działa on w oparciu o statystyczne prawdopodobieństwo łączenia znaków.
 
+# TEORIA (Quiz): WordPiece nie patrzy tylko na częstotliwość pary,
+# ale na wynik (score) premiujący rzadkie elementy tworzące częstą parę.
+# score = freq_pary / (freq_el1 * freq_el2)
+
 CO ROBI TEN SKRYPT?
 1. Inicjalizuje korpus słów i rozbija je na pojedyncze znaki (z prefiksem ##).
 2. Oblicza częstotliwość występowania każdego tokenu oraz każdej pary sąsiadów.

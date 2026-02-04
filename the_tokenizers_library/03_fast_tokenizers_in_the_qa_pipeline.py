@@ -15,7 +15,6 @@ TO JEST KLUCZ DO: Budowania chatbotów przeszukujących całe dokumenty PDF.
 """
 
 import torch
-import numpy as np
 from transformers import AutoTokenizer, AutoModelForQuestionAnswering
 
 # --- KROK 1: ŁADOWANIE MODELU I TOKENIZATORA ---
@@ -31,6 +30,11 @@ Hugging Face is a company based in New York City. The headquarters are in DUMBO,
 Sylvain has been working there since 2018 and enjoys building open-source tools for the community."""
 
 # --- KROK 2: CIĘCIE TEKSTU (SLIDING WINDOW) ---
+# TEORIA (Quiz): Obsługa długich kontekstów
+# Model nie odrzuca tekstu powyżej limitu (truncation), lecz stosuje "Sliding Window".
+# Dzieli kontekst na nakładające się fragmenty (stride), a następnie wybiera
+# odpowiedź z najwyższą sumą logitów start/end z dowolnego fragmentu.
+
 # Cel: Przetworzenie kontekstu w małych kawałkach, aby nic nie umknęło.
 print("\n--- Krok 2: Tworzenie nakładających się fragmentów (Sliding Window) ---")
 

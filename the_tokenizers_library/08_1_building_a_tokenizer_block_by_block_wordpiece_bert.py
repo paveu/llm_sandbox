@@ -1,5 +1,9 @@
 from tokenizers import Tokenizer, models, normalizers, pre_tokenizers, trainers, processors, decoders
 
+# TEORIA (Quiz): Etapy Potoku
+# 1. NORMALIZACJA: Wstępne czyszczenie (np. Lowercase, NFKD).
+# 2. PRE-TOKENIZACJA: Podział na słowa (np. na spacjach), zanim zadziała model subwordowy.
+
 # ==============================================================================
 # KROK 1: WYBÓR MODELU (ALBORYTMU RDZENNEGO)
 # WordPiece szuka subwordów i oznacza kontynuację słowa prefiksem "##".

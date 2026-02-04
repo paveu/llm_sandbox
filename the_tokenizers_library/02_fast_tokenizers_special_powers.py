@@ -60,10 +60,12 @@ predictions = outputs.logits.argmax(dim=-1)[0].tolist()
 probabilities = torch.nn.functional.softmax(outputs.logits, dim=-1)[0].tolist()
 
 # --- KROK 5: REKONSTRUKCJA I GRUPOWANIE ---
+# TEORIA (Quiz): Fast Tokenizer & NER
+# 1. Tylko 'Fast' tokenizery oferują 'offset_mapping', który wiąże tokeny z tekstem.
+# 2. W zadaniach NER (token-classification) stosuje się etykiety B- (początek)
+#    i I- (kontynuacja), aby poprawnie grupować encje wielotokenowe.
 # Cel: Złączyć '##yl', '##va' w 'Sylvain' i nadać im jedną etykietę PER.
 print("\n--- Krok 5: Składanie fragmentów w całe encje ---")
-
-
 
 results = []
 idx = 0

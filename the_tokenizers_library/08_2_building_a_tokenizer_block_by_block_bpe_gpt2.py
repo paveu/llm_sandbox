@@ -1,5 +1,9 @@
 from tokenizers import Tokenizer, models, pre_tokenizers, trainers, processors, decoders
 
+# TEORIA (Quiz): Etapy Potoku
+# 1. NORMALIZACJA: Wstępne czyszczenie (np. Lowercase, NFKD).
+# 2. PRE-TOKENIZACJA: Podział na słowa (np. na spacjach), zanim zadziała model subwordowy.
+
 # ==============================================================================
 # KROK 1: WYBÓR MODELU (BPE)
 # Byte-Pair Encoding łączy najczęstsze pary bajtów w coraz większe jednostki.
