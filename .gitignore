@@ -4,8 +4,9 @@
 # 2. Allow directories so Git can see into them
 !*/
 
-# 3. Allow all .py files
+# 3. Allow all .py and .md files
 !*.py
+!*.md
 
 # 4. Specifically allow the root configuration files
 !.gitignore
