@@ -22,6 +22,7 @@ dependencies = [
   "seqeval>=1.2.2",
   "label-studio>=1.22.0",
   "doccano[postgresql]>=1.5.5",
+  "gradio>=6.5.1",
 ]
 
 [tool.black]
