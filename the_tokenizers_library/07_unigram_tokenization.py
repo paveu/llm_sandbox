@@ -98,6 +98,7 @@ print(f"\n--- WYNIK KOŃCOWY ---")
 print(f"Najlepsza tokenizacja dla '{word_to_analyze}' to: {best_segmentation}")
 print(f"To ten podział zostanie użyty do obliczenia całkowitej straty korpusu.")
 
+print("ZASADA UNIGRAM: Zaczyna od DUŻEGO słownika i usuwa tokeny, które najmniej zwiększają stratę (loss).")
 """
 DALSZE KROKI W TRENOWANIU UNIGRAM:
 W pełnym algorytmie teraz należałoby:

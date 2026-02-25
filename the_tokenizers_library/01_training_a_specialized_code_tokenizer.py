@@ -46,6 +46,9 @@ def main():
     # Cel: Tokenizer analizuje cały korpus i znajduje najczęstsze pary znaków.
     print("\n--- Krok 3: Trening (Budowanie nowego słownika subwordów) ---")
     # 52000 to rozmiar słownika (vocab_size) - tyle unikalnych tokenów chcemy mieć.
+    # TEORIA (Quiz): Dlaczego generator?
+    # Użycie generatora (yield) zamiast listy pozwala uniknąć załadowania całego
+    # zbioru danych do pamięci RAM naraz. Jest to niezbędne przy zbiorach GB+.
     training_corpus = get_training_corpus(raw_datasets)
     tokenizer = old_tokenizer.train_new_from_iterator(training_corpus, 52000)
     print("Sukces! Tokenizer nauczył się statystyk kodu.")

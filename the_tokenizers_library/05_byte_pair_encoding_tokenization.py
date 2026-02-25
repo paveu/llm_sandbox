@@ -95,6 +95,7 @@ def sekcja_budowanie_potoku():
 
 
 if __name__ == "__main__":
+    print("ZASADA BPE: Zaczyna od małego słownika i łączy NAJCZĘSTSZE pary tokenów.")
     sekcja_normalizacja()
     sekcja_pre_tokenizacja()
     sekcja_budowanie_potoku()
