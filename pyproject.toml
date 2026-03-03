@@ -26,6 +26,8 @@ dependencies = [
   "gradio-client>=2.0.3",
   "tensorflow>=2.20.0",
   "tf-keras>=2.20.1",
+  "huggingface-hub>=0.36.0",
+  "trl>=0.29.0",
 ]
 
 [tool.black]
