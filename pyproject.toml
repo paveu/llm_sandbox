@@ -28,6 +28,7 @@ dependencies = [
   "tf-keras>=2.20.1",
   "huggingface-hub>=0.36.0",
   "trl>=0.29.0",
+  "peft>=0.18.1",
 ]
 
 [tool.black]
