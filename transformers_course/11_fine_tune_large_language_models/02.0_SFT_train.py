@@ -53,7 +53,7 @@ model = AutoModelForCausalLM.from_pretrained(model_id, device_map="auto")
 
 # Definiujemy parametry techniczne procesu uczenia
 sft_config = SFTConfig(
-    output_dir="./moj_model_smollm",      # Katalog na tymczasowe punkty kontrolne (checkpoints)
+    output_dir="moj_model_smollm",      # Katalog na tymczasowe punkty kontrolne (checkpoints)
     max_length=512,                      # Maksymalna długość kontekstu (chroni pamięć RAM/VRAM)
     learning_rate=2e-5,                  # Współczynnik uczenia - jak duże zmiany wprowadzać w wagach
     dataset_text_field="formatted_text", # Wskazujemy kolumnę z sformatowanym tekstem

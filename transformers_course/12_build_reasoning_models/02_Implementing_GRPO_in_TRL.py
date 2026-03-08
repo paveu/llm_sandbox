@@ -38,7 +38,7 @@ from transformers import AutoTokenizer, AutoModelForCausalLM
 # MODEL_ID to nazwa modelu na portalu Hugging Face.
 # Qwen2-0.5B to bardzo lekka wersja, idealna na start.
 MODEL_ID = "Qwen/Qwen2-0.5B-Instruct"
-OUTPUT_DIR = "grpo-reasoning-model" # Tutaj skrypt zapisze Twoją "mądrzejszą" wersję modelu.
+OUTPUT_DIR = "grpo-reasoning-model"  # Tutaj skrypt zapisze Twoją "mądrzejszą" wersję modelu.
 
 # Automatyczne sprawdzanie mocy Twojego komputera (GPU):
 # bf16/fp16 to sposoby zapisu liczb w pamięci karty graficznej.

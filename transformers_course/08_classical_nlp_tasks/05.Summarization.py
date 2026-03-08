@@ -93,7 +93,7 @@ data_collator = DataCollatorForSeq2Seq(tokenizer, model=model)
 
 # 5. ARGUMENTY TRENINGOWE
 training_args = Seq2SeqTrainingArguments(
-    output_dir="./streszczanie_model",
+    output_dir="streszczanie_model",
     eval_strategy="no",
     learning_rate=5e-4,  # Zwiększony LR dla bardzo małych zbiorów danych
     per_device_train_batch_size=2,

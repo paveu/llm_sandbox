@@ -15,7 +15,7 @@ from transformers import AutoModelForCausalLM, AutoTokenizer
 import torch
 
 # 1. Definicja ścieżki do folderu utworzonego przez skrypt treningowy
-model_path = "./moj_model_smollm_final"
+model_path = "moj_model_smollm_final"
 
 print("Ładowanie modelu z dysku...")
 # Ładujemy model i tokenizer z lokalnych plików

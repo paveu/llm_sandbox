@@ -11,7 +11,7 @@ GITHUB_TOKEN = "github_pat_11AAL67DA0HDHbjCU7cNb6_S2uABYQdEOMxINKhNa6pziKeOgs8hc
 headers = {"Authorization": f"token {GITHUB_TOKEN}"}
 OWNER = "huggingface"
 REPO = "datasets"
-ISSUES_PATH = Path("./data")
+ISSUES_PATH = Path("data")
 
 
 def get_comments(issue_number):

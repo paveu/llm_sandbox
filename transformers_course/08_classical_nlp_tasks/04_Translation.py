@@ -89,7 +89,7 @@ data_collator = DataCollatorForSeq2Seq(tokenizer, model=model)
 
 # 5. ARGUMENTY TRENINGOWE (Poprawione eval_strategy pod najnowsze biblioteki)
 training_args = Seq2SeqTrainingArguments(
-    output_dir="./anonimizacja_model",
+    output_dir="anonimizacja_model",
     eval_strategy="no",             # Wyłączamy ewaluację w trakcie, bo mamy za mały zbiór
     learning_rate=3e-5,             # Subtelny krok uczenia dla precyzyjnego dostrajania
     per_device_train_batch_size=2,
