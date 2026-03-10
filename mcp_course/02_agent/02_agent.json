@@ -1,0 +1,12 @@
+{
+    "name": "playwright-agent",
+    "description": "Agent sterujący przeglądarką",
+    "model": "Qwen/Qwen2.5-7B-Instruct",
+    "servers": [
+        {
+            "type": "stdio",
+            "command": "npx",
+            "args": ["@playwright/mcp@latest"]
+        }
+    ]
+}
